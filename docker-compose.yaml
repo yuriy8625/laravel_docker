@@ -1,0 +1,99 @@
+version: "3"
+
+networks:
+  advance-network:
+    driver: bridge
+
+#Volumes
+volumes:
+  dbdata:
+    driver: local
+
+services:
+  db:
+    image: mariadb:5.5.64
+    container_name: ${DB_HOST}
+    restart: unless-stopped
+    tty: true
+    ports:
+      - 8000:3306
+    volumes:
+      - dbdata:/var/lib/mysql/
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+    networks:
+      - advance-network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin_${DB_DATABASE}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      PMA_HOST: ${DB_HOST}
+      PMA_PORT: ${DB_PORT}
+      PMA_ARBITRARY: 1
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - 8081:80
+    volumes:
+      - /sessions
+    networks:
+      - advance-network
+
+  redis:
+    image: redis:alpine
+    container_name: ${REDIS_HOST}
+    restart: unless-stopped
+    ports:
+      - 8090:6379
+    networks:
+      - advance-network
+
+  app:
+    build:
+      context: .
+      dockerfile: ./docker/app/Dockerfile
+    container_name: app_${DB_DATABASE}
+    restart: unless-stopped
+    volumes:
+      - ./:/var/www/
+      - ./docker/app/php.ini:/usr/local/etc/php/conf.d/custom.ini
+      - ~/.ssh:/home/user/.ssh:ro
+    depends_on:
+      - db
+      - redis
+    networks:
+      - advance-network
+
+  nginx:
+    image: nginx:stable
+    container_name: nginx_${DB_DATABASE}
+    restart: unless-stopped
+    volumes:
+      - ./docker/nginx:/etc/nginx/conf.d
+      - ./:/var/www/
+      - ./docker/nginx/logs:/var/log/nginx
+    ports:
+      - 8080:80
+    depends_on:
+      - app
+    networks:
+      - advance-network
+
+  nodejs:
+    image: node:14.17-alpine
+    container_name: nodejs_${DB_DATABASE}
+    restart: unless-stopped
+    volumes:
+      - ./:/var/www
+    ports:
+      - 8030:3000
+    working_dir: /var/www
+    networks:
+      - advance-network
+    command: npm install
